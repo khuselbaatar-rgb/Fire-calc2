@@ -16,7 +16,7 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request
 
 BASE_DIR    = Path(__file__).resolve().parent
-BACKEND_BIN = BASE_DIR / "backend" / "calculator.exe"
+BACKEND_BIN = BASE_DIR / "backend" / "calculator"
 
 
 # Заавал шаардлагатай талбарууд (3 бүлэг арматурын шинэ бүтэц)
