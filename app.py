@@ -16,7 +16,7 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request
 
 BASE_DIR    = Path(__file__).resolve().parent
-BACKEND_BIN = BASE_DIR / "backend" / "calculator"
+BACKEND_BIN = BASE_DIR / "backend/calculator"
 
 
 # Заавал шаардлагатай талбарууд (3 бүлэг арматурын шинэ бүтэц)
@@ -86,33 +86,23 @@ def calculate():
     stdin_data = "\n".join(lines) + "\n"
 
     try:
-    proc = subprocess.run(
-        [str(BACKEND_BIN)],
-        input=stdin_data,
-        capture_output=True,
-        text=True,
-        timeout=10,
-        check=True,
-    )
+        proc = subprocess.run(
+            [str(BACKEND_BIN)],
+            input=stdin_data,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
+        )
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Backend timed out"}), 504
+    except subprocess.CalledProcessError as exc:
+        return jsonify({"error": f"Backend failed: {exc.stderr.strip() or exc.returncode}"}), 500
 
-    print("STDOUT:", proc.stdout)
-    print("STDERR:", proc.stderr)
-    print("RETURNCODE:", proc.returncode)
-
-    if proc.returncode != 0:
-        return jsonify({
-            "error": "C++ backend crashed",
-            "stdout": proc.stdout,
-            "stderr": proc.stderr,
-            "code": proc.returncode
-        }), 500
-
-    return jsonify(json.loads(proc.stdout))
-
-except Exception as e:
-    return jsonify({
-        "error": str(e)
-    }), 500
+    try:
+        result = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return jsonify({"error": "Backend produced invalid JSON", "raw": proc.stdout}), 500
 
     
     def iso834_temp(tau_min):
@@ -141,3 +131,4 @@ def health():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
     app.run(host="0.0.0.0", port=port, debug=True)
+
