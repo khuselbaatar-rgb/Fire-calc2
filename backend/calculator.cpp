@@ -175,11 +175,14 @@ static StepResult computeStep(double tau,
     const double bb = std::max(1.0, b - 2.0 * r.delta);
     const double hh = std::max(1.0, h - 2.0 * r.delta);
 
-    // Np,tem = φ · [Rbn·(b−2δ)(h−2δ) + Σ γi·Rsn·Asi] · 10⁻³
-    r.Nu = phi * (Rbn*bb*hh
-                  + (r.g1*Rsn)*As1
-                  + (r.g2*Rsn)*As2
-                  + (r.g3*Rsn)*As3) * 1.0e-3;
+    // Σ γi·Rsn·Asi — зөвхөн байгаа бүлгийг л нэмнэ (Asi > 0 үед)
+    double rebarSum = 0.0;
+    if (As1 > 0) rebarSum += r.g1 * Rsn * As1;
+    if (As2 > 0) rebarSum += r.g2 * Rsn * As2;
+    if (As3 > 0) rebarSum += r.g3 * Rsn * As3;
+
+    // Nu = φ · [Rbn·(b−2δ)(h−2δ) + Σ γi·Rsn·Asi] · 10⁻³
+    r.Nu = phi * (Rbn*bb*hh + rebarSum) * 1.0e-3;
     r.ok = (r.Nu >= Np);
     return r;
 }
@@ -225,7 +228,12 @@ int main() {
     const double lambda = l0 / std::min(b, h);
     const double phi    = hasManualPhi ? phiManual : phiByLambda(lambda);
     const double AsTot  = As1 + As2 + As3;
-    const double N0     = phi * (Rbn*b*h + Rsn*AsTot) * 1.0e-3;
+    // N0 = φ · [Rbn·b·h + Σ Rsn·Asi] · 10⁻³  (τ=0, γi=1.0)
+    double rebar0 = 0.0;
+    if (As1 > 0) rebar0 += Rsn * As1;
+    if (As2 > 0) rebar0 += Rsn * As2;
+    if (As3 > 0) rebar0 += Rsn * As3;
+    const double N0 = phi * (Rbn*b*h + rebar0) * 1.0e-3;
 
     // ── Хугацааны цэгүүд ──
     std::vector<double> times;
@@ -337,5 +345,6 @@ int main() {
     std::cout << out.str() << std::endl;
     return 0;
 }
+
 
 
