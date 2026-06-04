@@ -86,23 +86,33 @@ def calculate():
     stdin_data = "\n".join(lines) + "\n"
 
     try:
-        proc = subprocess.run(
-            [str(BACKEND_BIN)],
-            input=stdin_data,
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
-        return jsonify({"error": "Backend timed out"}), 504
-    except subprocess.CalledProcessError as exc:
-        return jsonify({"error": f"Backend failed: {exc.stderr.strip() or exc.returncode}"}), 500
+    proc = subprocess.run(
+        [str(BACKEND_BIN)],
+        input=stdin_data,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
 
-    try:
-        result = json.loads(proc.stdout)
-    except json.JSONDecodeError:
-        return jsonify({"error": "Backend produced invalid JSON", "raw": proc.stdout}), 500
+    print("STDOUT:", proc.stdout)
+    print("STDERR:", proc.stderr)
+    print("RETURNCODE:", proc.returncode)
+
+    if proc.returncode != 0:
+        return jsonify({
+            "error": "C++ backend crashed",
+            "stdout": proc.stdout,
+            "stderr": proc.stderr,
+            "code": proc.returncode
+        }), 500
+
+    return jsonify(json.loads(proc.stdout))
+
+except Exception as e:
+    return jsonify({
+        "error": str(e)
+    }), 500
 
     
     def iso834_temp(tau_min):
