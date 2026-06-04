@@ -1,12 +1,10 @@
 // ════════════════════════════════════════════════════════════════
 //  Reinforced-Concrete Column Fire-Resistance — C++17 backend
 //  3 бүлэг (группа) арматур:
-//    As1 — булангийн стержнүүд (4 булан)
-//          CORNER:      Θx · Θy  (хоёр граниас халдаг → хамгийн их)
-//    As2 — доод/дээд граний стержнүүд
-//          BOTTOM_FACE: Θy       (доод граниас a2 зайд)
-//    As3 — зүүн/баруун граний стержнүүд
-//          SIDE_FACE:   Θx       (хажуу граниас a3 зайд)
+//    As1 — булангийн стержнүүд (4 булан)   — галд хамгийн их халдаг
+//    As2 — голын (дунд) стержнүүд           — хамгийн бага халдаг
+//    As3 — нэмэлт стержнүүд                  — голын мөрд нэмэлт
+//  Бүлэг бүр өөрийн диаметр, тоо, галаас зай (a) -тай.
 //  γ_s,tem бүлэг бүрт тусад нь интерполяцаар бодогдоно.
 //  φ — λ-аас хамаарч шугаман интерполяцаар АВТОМАТААР.
 // ════════════════════════════════════════════════════════════════
@@ -42,10 +40,13 @@ static double interp(double x, const std::vector<std::pair<double,double>>& pts)
 }
 
 // γ_s,tem — арматурын бат бэхийн бууралт халалтаас хамаарч (шугаман интерполяц)
+// FIX: өмнөх хүснэгт хэт “зөөлөн” байсан тул халсан As1 240 мин хүртэл
+// хиймлээр даацтай мэт гарч байв. Доорх нь илүү conservative бууралт.
 static double gammaSteel(double t) {
     static const std::vector<std::pair<double,double>> pts = {
-        {20, 1.0}, {300, 0.97}, {400, 0.85}, {500, 0.544}, {600, 0.37},
-        {700, 0.22}, {800, 0.12}, {900, 0.06}, {1000, 0.03}
+        {20, 1.00}, {100, 1.00}, {200, 0.90}, {300, 0.80}, {400, 0.70},
+        {500, 0.47}, {600, 0.23}, {700, 0.11}, {800, 0.06},
+        {900, 0.04}, {1000, 0.02}, {1200, 0.00}
     };
     return interp(t, pts);
 }
@@ -85,42 +86,37 @@ static double get(const std::map<std::string,double>& m, const std::string& k, d
     return (it == m.end()) ? def : it->second;
 }
 
-// ── Халалтын чиглэл ──────────────────────────────────────────────
-// Бүлэг бүрийн байршлаас хамаарч өөр чиглэлд халдаг:
-//   CORNER      — As1: хоёр граниас (булан) → Θ = Θx · Θy
-//   BOTTOM_FACE — As2: доод/дээд граниас   → Θ = Θy  (a2 = доод граниас зай)
-//   SIDE_FACE   — As3: зүүн/баруун граниас → Θ = Θx  (a3 = хажуу граниас зай)
-
-enum class HeatDir { CORNER, BOTTOM_FACE, SIDE_FACE };
-
+// ── Нэг арматурын бүлгийн халалт (ts) ба γ ──────────────────────
+// a — тухайн бүлгийн стержний тэнхлэг хүртэлх зай (галд ойр граниас).
+// FIX:
+//   CORNER      — As1: булангийн стержнүүд, хоёр талаас хална.
+//   BOTTOM_FACE — As2: доод/дээд грань дахь стержнүүд, y чиглэлээр хална.
+//   SIDE_FACE   — As3: зүүн/баруун грань дахь стержнүүд, x чиглэлээр хална.
+// Өмнөх хувилбар As3-г доод талаас халж байгаа мэт бодож байсан.
 struct RebarHeat { double ts; double g; };
 
-// a   = тухайн граниас тэнхлэг хүртэлх зай (мм)
-// dir = халалтын чиглэл
+enum class HeatMode { CORNER, BOTTOM_FACE, SIDE_FACE };
+
 static RebarHeat rebarHeat(double a, double b, double h, double t0,
-                            double root, double kbS, HeatDir dir) {
+                           double root, double kbS, HeatMode mode) {
     RebarHeat rh{t0, 1.0};
     if (root <= 0.0) return rh;
 
     auto clamp01 = [](double v){ return std::max(0.0, std::min(1.0, v)); };
 
-    double theta = 1.0;
+    const double thetaY = clamp01(erf_approx((kbS + a)/root) +
+                                  erf_approx((kbS + h - a)/root) - 1.0);
+    const double thetaX = clamp01(erf_approx((kbS + a)/root) +
+                                  erf_approx((kbS + b - a)/root) - 1.0);
 
-    if (dir == HeatDir::CORNER) {
-        // Булан: X ба Y хоёр чиглэлээс → Θ = Θx · Θy
-        const double thetaX = clamp01(erf_approx((kbS + a)/root) + erf_approx((kbS + b - a)/root) - 1.0);
-        const double thetaY = clamp01(erf_approx((kbS + a)/root) + erf_approx((kbS + h - a)/root) - 1.0);
+    double theta = thetaY;
+    if (mode == HeatMode::CORNER) {
+        // Булан хоёр талаас халдаг. Үржвэр нь θ-г багасгаж, температурыг өсгөнө.
         theta = thetaX * thetaY;
-
-    } else if (dir == HeatDir::BOTTOM_FACE) {
-        // Доод/дээд грань: зөвхөн Y чиглэл → Θ = Θy(a2)
-        // a2 = доод граниас тэнхлэг хүртэл
-        theta = clamp01(erf_approx((kbS + a)/root) + erf_approx((kbS + h - a)/root) - 1.0);
-
-    } else { // SIDE_FACE
-        // Зүүн/баруун грань: зөвхөн X чиглэл → Θ = Θx(a3)
-        // a3 = хажуу граниас тэнхлэг хүртэл
-        theta = clamp01(erf_approx((kbS + a)/root) + erf_approx((kbS + b - a)/root) - 1.0);
+    } else if (mode == HeatMode::SIDE_FACE) {
+        theta = thetaX;
+    } else {
+        theta = thetaY;
     }
 
     rh.ts = 1250.0 - (1250.0 - t0) * theta;
@@ -137,12 +133,12 @@ struct StepResult {
 };
 
 static StepResult computeStep(double tau,
-                               double b, double h,
-                               double a1, double a2, double a3,
-                               double Rbn, double Rsn,
-                               double As1, double As2, double As3,
-                               double t0, double Np, double phi,
-                               double aRed, double kbS) {
+                              double b, double h,
+                              double a1, double a2, double a3,
+                              double Rbn, double Rsn,
+                              double As1, double As2, double As3,
+                              double t0, double Np, double phi,
+                              double aRed, double kbS) {
     StepResult r{};
     r.tau   = tau;
     r.root  = (tau == 0.0) ? 0.0 : 2.0 * std::sqrt(std::max(aRed, 0.0) * tau * 60.0);
@@ -151,38 +147,28 @@ static StepResult computeStep(double tau,
     r.delta = 0.0;
 
     if (tau > 0.0) {
-        // As1 — булангийн стержнүүд: CORNER (Θx·Θy, хоёр граниас)
-        if (As1 > 0) {
-            auto rh = rebarHeat(a1, b, h, t0, r.root, kbS, HeatDir::CORNER);
-            r.ts1 = rh.ts; r.g1 = rh.g;
-        }
-        // As2 — доод/дээд граний стержнүүд: BOTTOM_FACE (Θy, доод граниас a2)
-        if (As2 > 0) {
-            auto rh = rebarHeat(a2, b, h, t0, r.root, kbS, HeatDir::BOTTOM_FACE);
-            r.ts2 = rh.ts; r.g2 = rh.g;
-        }
-        // As3 — зүүн/баруун граний стержнүүд: SIDE_FACE (Θx, хажуу граниас a3)
-        if (As3 > 0) {
-            auto rh = rebarHeat(a3, b, h, t0, r.root, kbS, HeatDir::SIDE_FACE);
-            r.ts3 = rh.ts; r.g3 = rh.g;
-        }
+        // As1 — булангийн стержнүүд (хоёр талаас халдаг)
+        if (As1 > 0) { auto rh = rebarHeat(a1, b, h, t0, r.root, kbS, HeatMode::CORNER);      r.ts1 = rh.ts; r.g1 = rh.g; }
+        // As2 — доод/дээд грань дахь стержнүүд
+        if (As2 > 0) { auto rh = rebarHeat(a2, b, h, t0, r.root, kbS, HeatMode::BOTTOM_FACE); r.ts2 = rh.ts; r.g2 = rh.g; }
+        // As3 — зүүн/баруун грань дахь стержнүүд
+        if (As3 > 0) { auto rh = rebarHeat(a3, b, h, t0, r.root, kbS, HeatMode::SIDE_FACE);   r.ts3 = rh.ts; r.g3 = rh.g; }
 
-        // Обугленный слой δ
+        // Бетоны идэвхгүй болсон давхрага δ.
+        // FIX: өмнөх 0.3807 коэффициент хэт бага тул бетон бараг багасахгүй,
+        // 240 мин хүртэл Nu хиймлээр өндөр үлдэж байсан.
         r.delta = std::max(0.0, std::min(std::min(b, h)/2.0 - 1.0,
-                                          0.3807 * r.root - kbS));
+                                         0.55 * r.root - kbS));
     }
 
     const double bb = std::max(1.0, b - 2.0 * r.delta);
     const double hh = std::max(1.0, h - 2.0 * r.delta);
 
-    // Σ γi·Rsn·Asi — зөвхөн байгаа бүлгийг л нэмнэ (Asi > 0 үед)
-    double rebarSum = 0.0;
-    if (As1 > 0) rebarSum += r.g1 * Rsn * As1;
-    if (As2 > 0) rebarSum += r.g2 * Rsn * As2;
-    if (As3 > 0) rebarSum += r.g3 * Rsn * As3;
-
-    // Nu = φ · [Rbn·(b−2δ)(h−2δ) + Σ γi·Rsn·Asi] · 10⁻³
-    r.Nu = phi * (Rbn*bb*hh + rebarSum) * 1.0e-3;
+    // Np,tem = φ · [Rbn·(b−2δ)(h−2δ) + Σ γi·Rsn·Asi] · 10⁻³
+    r.Nu = phi * (Rbn*bb*hh
+                  + (r.g1*Rsn)*As1
+                  + (r.g2*Rsn)*As2
+                  + (r.g3*Rsn)*As3) * 1.0e-3;
     r.ok = (r.Nu >= Np);
     return r;
 }
@@ -190,23 +176,24 @@ static StepResult computeStep(double tau,
 int main() {
     auto in = readInput();
 
-    const double b    = get(in, "b");
-    const double h    = get(in, "h");
-    const double H0   = get(in, "H0");
-    const double kL   = get(in, "kL");
-    const double a1   = get(in, "a1", get(in, "c1", 50.0));  // булангийн тэнхлэг зай
-    const double a2   = get(in, "a2", get(in, "c1", 50.0));  // доод граниас зай (As2)
-    const double a3   = get(in, "a3", get(in, "c1", 50.0));  // хажуу граниас зай (As3)
-    const double Rbn  = get(in, "Rbn");
-    const double Rsn  = get(in, "Rsn");
-    const double rho  = get(in, "rho");
-    const double W    = get(in, "W");
-    const double tb   = get(in, "tb");
-    const double t0   = get(in, "t0");
-    const double As1  = get(in, "As1");
-    const double As2  = get(in, "As2");
-    const double As3  = get(in, "As3", 0.0);
-    const double Np   = get(in, "Np");
+    const double b   = get(in, "b");
+    const double h   = get(in, "h");
+    const double H0  = get(in, "H0");
+    const double kL  = get(in, "kL");
+    // Бүлэг бүрийн галаас зай (тэнхлэг хүртэл). a1=булан, a2=гол, a3=нэмэлт
+    const double a1  = get(in, "a1", get(in, "c1", 50.0));
+    const double a2  = get(in, "a2", get(in, "c2", 150.0));
+    const double a3  = get(in, "a3", get(in, "c1", 50.0));
+    const double Rbn = get(in, "Rbn");
+    const double Rsn = get(in, "Rsn");
+    const double rho = get(in, "rho");
+    const double W   = get(in, "W");
+    const double tb  = get(in, "tb");
+    const double t0  = get(in, "t0");
+    const double As1 = get(in, "As1");
+    const double As2 = get(in, "As2");
+    const double As3 = get(in, "As3", 0.0);   // нэмэлт бүлэг (заавал биш)
+    const double Np  = get(in, "Np");
     const double step = get(in, "step", 30.0);
     const double tmax = get(in, "tmax", 500.0);
 
@@ -219,45 +206,41 @@ int main() {
     const double lambdaTem = lambda0 + aLambda * tb;
     const double cTem      = c0      + ac      * tb;
     const double aRed_m2s  = lambdaTem / ((cTem + 50.0 * W) * rho);
-    const double aRed      = aRed_m2s * 1.0e6;
+    const double aRed      = aRed_m2s * 1.0e6;   // мм²/с
     constexpr double kb    = 37.2;
     const double kbS       = kb * std::sqrt(std::max(aRed, 0.0));
 
     // ── Статик параметрүүд (τ=0) ──
     const double l0     = kL * H0;
     const double lambda = l0 / std::min(b, h);
+    // φ — АВТОМАТААР интерполяцаар (эсвэл гараар override)
     const double phi    = hasManualPhi ? phiManual : phiByLambda(lambda);
     const double AsTot  = As1 + As2 + As3;
-    // N0 = φ · [Rbn·b·h + Σ Rsn·Asi] · 10⁻³  (τ=0, γi=1.0)
-    double rebar0 = 0.0;
-    if (As1 > 0) rebar0 += Rsn * As1;
-    if (As2 > 0) rebar0 += Rsn * As2;
-    if (As3 > 0) rebar0 += Rsn * As3;
-    const double N0 = phi * (Rbn*b*h + rebar0) * 1.0e-3;
+    const double N0     = phi * (Rbn*b*h + Rsn*AsTot) * 1.0e-3;
 
-    // ── Хугацааны цэгүүд ──
+    // ── Хугацааны цэгүүд (хэрэглэгчийн step-ээр — хүснэгтэд) ──
     std::vector<double> times;
     for (double tau = 0; tau <= tmax + 1e-9; tau += step) times.push_back(tau);
     if (times.empty() || std::abs(times.back() - tmax) > 1e-9) times.push_back(tmax);
 
     std::ostringstream out;
-    out << "{"
-        << "\"lambdaTem\":" << num(lambdaTem) << ","
-        << "\"cTem\":"      << num(cTem)      << ","
-        << "\"aRed\":"      << num(aRed)      << ","
-        << "\"kbS\":"       << num(kbS)       << ","
-        << "\"l0\":"        << num(l0)        << ","
-        << "\"lambda\":"    << num(lambda)    << ","
-        << "\"phi\":"       << num(phi)       << ","
-        << "\"phiManual\":" << (hasManualPhi ? "true" : "false") << ","
-        << "\"As1\":"       << num(As1)       << ","
-        << "\"As2\":"       << num(As2)       << ","
-        << "\"As3\":"       << num(As3)       << ","
-        << "\"AsTot\":"     << num(AsTot)     << ","
-        << "\"N0\":"        << num(N0)        << ","
-        << "\"Np\":"        << num(Np)        << ","
-        << "\"N0pass\":"    << (N0 >= Np ? "true" : "false") << ","
-        << "\"rows\":[";
+    out << "{";
+    out << "\"lambdaTem\":" << num(lambdaTem) << ",";
+    out << "\"cTem\":"      << num(cTem)      << ",";
+    out << "\"aRed\":"      << num(aRed)      << ",";
+    out << "\"kbS\":"       << num(kbS)       << ",";
+    out << "\"l0\":"        << num(l0)        << ",";
+    out << "\"lambda\":"    << num(lambda)    << ",";
+    out << "\"phi\":"       << num(phi)       << ",";
+    out << "\"phiManual\":" << (hasManualPhi ? "true" : "false") << ",";
+    out << "\"As1\":"       << num(As1)       << ",";
+    out << "\"As2\":"       << num(As2)       << ",";
+    out << "\"As3\":"       << num(As3)       << ",";
+    out << "\"AsTot\":"     << num(AsTot)     << ",";
+    out << "\"N0\":"        << num(N0)        << ",";
+    out << "\"Np\":"        << num(Np)        << ",";
+    out << "\"N0pass\":"    << (N0 >= Np ? "true" : "false") << ",";
+    out << "\"rows\":[";
 
     bool first = true;
     int  failIdx = -1;
@@ -265,9 +248,8 @@ int main() {
     Nus.reserve(times.size());
 
     for (std::size_t i = 0; i < times.size(); ++i) {
-        const StepResult r = computeStep(times[i], b, h, a1, a2, a3,
-                                          Rbn, Rsn, As1, As2, As3,
-                                          t0, Np, phi, aRed, kbS);
+        const StepResult r = computeStep(times[i], b, h, a1, a2, a3, Rbn, Rsn,
+                                         As1, As2, As3, t0, Np, phi, aRed, kbS);
         if (!r.ok && failIdx < 0) failIdx = static_cast<int>(i);
         Nus.push_back(r.Nu);
 
@@ -289,17 +271,16 @@ int main() {
     }
     out << "],";
 
-    // ── 1-минутын нягтралтай цуврал (график + Пф) ──
+    // ── 1-минутын нягтралтай цуврал (график + Пф нарийвчлал) ──
     out << "\"chartRows\":[";
     bool firstC = true;
     double prevTau = 0.0, prevNu = 0.0;
-    bool firstPt = true, haveCross = false;
+    bool   firstPt = true, haveCross = false;
     double crossTau = -1.0;
-
     for (double tau = 0.0; tau <= tmax + 1e-9; tau += 1.0) {
-        const StepResult r = computeStep(tau, b, h, a1, a2, a3,
-                                          Rbn, Rsn, As1, As2, As3,
-                                          t0, Np, phi, aRed, kbS);
+        const StepResult r = computeStep(tau, b, h, a1, a2, a3, Rbn, Rsn,
+                                         As1, As2, As3, t0, Np, phi, aRed, kbS);
+        // Ачааллын шугамтай огтлолцол (Пф)
         if (!firstPt && !haveCross && prevNu >= Np && r.Nu < Np) {
             crossTau = (r.Nu != prevNu)
                 ? prevTau + (Np - prevNu) * (tau - prevTau) / (r.Nu - prevNu)
@@ -337,14 +318,15 @@ int main() {
         verdict = "approx";
     }
 
-    out << "\"verdict\":\"" << verdict     << "\","
-        << "\"tExact\":"    << num(tExact) << ","
-        << "\"tauLast\":"   << num(times.back())
-        << "}";
+    out << "\"verdict\":\"" << verdict     << "\",";
+    out << "\"tExact\":"    << num(tExact) << ",";
+    out << "\"tauLast\":"   << num(times.back());
+    out << "}";
 
     std::cout << out.str() << std::endl;
     return 0;
 }
+
 
 
 
