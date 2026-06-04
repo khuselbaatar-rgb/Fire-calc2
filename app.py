@@ -16,8 +16,7 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request
 
 BASE_DIR    = Path(__file__).resolve().parent
-BACKEND_BIN = BASE_DIR / "backend/calculator"
-
+BACKEND_BIN = BASE_DIR / "backend" / "calculator"
 
 # Заавал шаардлагатай талбарууд (3 бүлэг арматурын шинэ бүтэц)
 REQUIRED_KEYS = [
@@ -131,4 +130,5 @@ def health():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
     app.run(host="0.0.0.0", port=port, debug=True)
+
 
