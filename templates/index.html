@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title data-i18n="pageTitle">Расчет огнестойкости железобетонной колонны</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <h1>🔥 <span data-i18n="mainTitle">Расчет огнестойкости железобетонной колонны</span></h1>
+  </div>
+  <div class="lang-switcher" id="langSwitcher">
+    <button class="flag-btn" data-lang="en" title="English" onclick="setLang('en')">
+      <svg viewBox="0 0 60 30" xmlns="http://www.w3.org/2000/svg">
+        <clipPath id="ukclip"><path d="M30,15 h30 v15 zv15 h-30 zh-30 v-15 zv-15 h30 z"/></clipPath>
+        <path d="M0,0 v30 h60 v-30 z" fill="#012169"/>
+        <path d="M0,0 L60,30 M60,0 L0,30" stroke="#fff" stroke-width="6"/>
+        <path d="M0,0 L60,30 M60,0 L0,30" clip-path="url(#ukclip)" stroke="#C8102E" stroke-width="4"/>
+        <path d="M30,0 v30 M0,15 h60" stroke="#fff" stroke-width="10"/>
+        <path d="M30,0 v30 M0,15 h60" stroke="#C8102E" stroke-width="6"/>
+      </svg>
+    </button>
+    <button class="flag-btn" data-lang="ru" title="Русский" onclick="setLang('ru')">
+      <svg viewBox="0 0 9 6" xmlns="http://www.w3.org/2000/svg">
+        <rect width="9" height="6" fill="#fff"/>
+        <rect width="9" height="2" y="2" fill="#0039A6"/>
+        <rect width="9" height="2" y="4" fill="#D52B1E"/>
+      </svg>
+    </button>
+    <button class="flag-btn" data-lang="mn" title="Монгол" onclick="setLang('mn')">
+      <svg viewBox="0 0 6 3" xmlns="http://www.w3.org/2000/svg">
+        <rect width="2" height="3" x="0" fill="#DA2032"/>
+        <rect width="2" height="3" x="2" fill="#0066B3"/>
+        <rect width="2" height="3" x="4" fill="#DA2032"/>
+      </svg>
+    </button>
+  </div>
+</header>
+
+<main>
+<aside>
+  <div class="card">
+    <h2 data-i18n="initialData">Исходные данные</h2>
+    <div class="tabs">
+      <a href="#sectionBox" data-i18n="tabSection">Сечение</a>
+      <a href="#calcTime" data-i18n="tabTable">Таблица</a>
+      <a href="#chartBox" data-i18n="tabChart">График</a>
+      <a href="#concl" data-i18n="tabConcl">Вывод</a>
+    </div>
+
+    <h3 data-i18n="sec1">1. Геометрия колонны</h3>
+    <div class="grid">
+      <div class="field"><label><span data-i18n="lblB">b — ширина</span> <span class="unit" data-i18n="uMm">мм</span></label><input id="b" type="number" value="300"></div>
+      <div class="field"><label><span data-i18n="lblH">h — высота</span> <span class="unit" data-i18n="uMm">мм</span></label><input id="h" type="number" value="300"></div>
+      <div class="field"><label><span data-i18n="lblH0">H₀ — высота колонны</span> <span class="unit" data-i18n="uMm">мм</span></label><input id="H0" type="number" value="4000"></div>
+      <div class="field"><label><span data-i18n="lblKL">k<sub>l</sub> для l₀=kH₀</span> <span class="unit">—</span></label><input id="kL" type="number" step="0.01" value="0.8"></div>
+    </div>
+
+    <h3 data-i18n="sec2">2. Материалы</h3>
+    <div class="grid">
+      <div class="field"><label><span data-i18n="lblRbn">R<sub>bn</sub> — бетон</span> <span class="unit" data-i18n="uMpa">МПа</span></label><input id="Rbn" type="number" value="22"></div>
+      <div class="field"><label><span data-i18n="lblRsn">R<sub>sn</sub> — арматура</span> <span class="unit" data-i18n="uMpa">МПа</span></label><input id="Rsn" type="number" value="400"></div>
+      <div class="field"><label><span data-i18n="lblRho">ρ — плотность</span> <span class="unit" data-i18n="uKgm3">кг/м³</span></label><input id="rho" type="number" value="2300"></div>
+      <div class="field"><label><span data-i18n="lblW">W — влажность</span> <span class="unit">%</span></label><input id="W" type="number" step="0.1" value="2"></div>
+      <div class="field"><label><span data-i18n="lblTb">t<sub>b</sub> — средняя t</span> <span class="unit">°C</span></label><input id="tb" type="number" value="450"></div>
+      <div class="field"><label><span data-i18n="lblT0">t₀ — начальная t</span> <span class="unit">°C</span></label><input id="t0" type="number" value="20"></div>
+    </div>
+
+    <!-- ═══════ АРМИРОВАНИЕ — 3 ГРУППЫ ═══════ -->
+    <h3 data-i18n="secArm">Армирование — группы стержней</h3>
+    <p class="mini arm-hint" data-i18n="armHint">Колонна армируется 3 группами. Для каждой укажите диаметр, количество и расстояние до оси a.</p>
+
+    <!-- Группа 1: угловые -->
+    <div class="arm-block arm-g1">
+      <div class="arm-row-head">
+        <span class="arm-dot" style="background:#ff5c5c"></span>
+        <span class="arm-title" data-i18n="armG1">Группа 1 (As₁) </span>
+      </div>
+      <div class="arm-grid3">
+        <div class="field"><label><span data-i18n="armDiam">Ø, мм</span></label><input id="d1" type="number" min="1" step="0.5" value="32" oninput="refreshArm()"></div>
+        <div class="field"><label><span data-i18n="armCount">шт</span></label><input id="n1" type="number" min="0" step="1" value="4" oninput="refreshArm()"></div>
+        <div class="field"><label><span data-i18n="armDist">a, мм</span></label><input id="a1" type="number" min="1" step="1" value="50" oninput="refreshArm()"></div>
+      </div>
+      <div class="arm-area-line"><span class="mini">As₁</span><span id="As1disp" class="arm-result arm-result-ok">—</span></div>
+    </div>
+
+    <div class="arm-block arm-g2">
+      <div class="arm-row-head">
+        <span class="arm-dot" style="background:#5aa9ff"></span>
+        <span class="arm-title" data-i18n="armG2">Группа 2 (As₂)</span>
+        
+      </div>
+      <div class="arm-grid3">
+        <div class="field"><label><span data-i18n="armDiam">Ø, мм</span></label><input id="d2" type="number" min="0" step="0.5" value="25" oninput="refreshArm()"></div>
+        <div class="field"><label><span data-i18n="armCount">шт</span></label><input id="n2" type="number" min="0" step="1" value="2" oninput="refreshArm()"></div>
+        <div class="field"><label><span>a₂, мм <span class="unit">доод граниас</span></span></label><input id="a2" type="number" min="1" step="1" value="50" oninput="refreshArm()"></div>
+      </div>
+      <div class="arm-area-line"><span class="mini">As₂</span><span id="As2disp" class="arm-result arm-result-ok">—</span></div>
+    </div>
+
+    <div class="arm-block arm-g3">
+      <div class="arm-row-head">
+        <span class="arm-dot" style="background:#3ddc84"></span>
+        <span class="arm-title" data-i18n="armG3">Группа 3 (As₃)</span>
+        
+      </div>
+      <div class="arm-grid3">
+        <div class="field"><label><span data-i18n="armDiam">Ø, мм</span></label><input id="d3" type="number" min="0" step="0.5" value="25" oninput="refreshArm()"></div>
+        <div class="field"><label><span data-i18n="armCount">шт</span></label><input id="n3" type="number" min="0" step="1" value="2" oninput="refreshArm()"></div>
+        <div class="field"><label><span>a₃, мм <span class="unit">хажуу граниас</span></span></label><input id="a3" type="number" min="1" step="1" value="50" oninput="refreshArm()"></div>
+      </div>
+      <div class="arm-area-line"><span class="mini">As₃</span><span id="As3disp" class="arm-result arm-result-ok">—</span></div>
+    </div>
+
+    <div class="arm-total-line">
+      <span data-i18n="rowAsTot">ΣAs</span>
+      <span id="AsTotDisp" class="arm-result arm-result-ok">—</span>
+    </div>
+    <!-- ═══════════════════════════════════════ -->
+
+    <h3 data-i18n="sec3">3. Нагрузка и расчёт</h3>
+    <div class="grid">
+      <div class="field"><label><span data-i18n="lblNp">N<sub>p</sub> — расчетная нагрузка</span> <span class="unit" data-i18n="uKn">кН</span></label><input id="Np" type="number" value="2354"></div>
+      <div class="field"><label><span data-i18n="lblPhi">φ вручную?</span> <span class="unit" data-i18n="lblPhiHint">пусто = авто</span></label><input id="phiManual" type="number" step="0.001" data-i18n-ph="phPhi" placeholder="напр. 0.85"></div>
+      <div class="field"><label><span data-i18n="lblStep">Шаг времени</span> <span class="unit" data-i18n="uMin">мин</span></label><select id="step"><option value="15">15</option><option value="30">30</option><option selected value="60">60</option></select></div>
+      <div class="field"><label><span data-i18n="lblTmax">До времени</span> <span class="unit" data-i18n="uMin">мин</span></label><input id="tmax" type="number" value="500"></div>
+    </div>
+
+    <button onclick="calc()" data-i18n="btnCalc">Рассчитать колонну</button>
+    <div class="btnRow">
+      <button class="btn2" onclick="loadExample()" data-i18n="btnExample">Загрузить пример</button>
+      <button class="btn2" onclick="window.print()" data-i18n="btnPrint">Печать / PDF</button>
+    </div>
+  </div>
+</aside>
+
+<section>
+  <!-- Cross-section -->
+  <div class="card" id="sectionBox">
+    <h2 data-i18n="cardSection">Сечение колонны</h2>
+    <p class="mini" data-i18n="sectionHint">Угловые, средние и дополнительные стержни показаны цветом по нагреву.</p>
+    <div class="section-wrap">
+      <div class="section-svg-wrap"><div id="sectionSvg"></div></div>
+      <div class="section-legend">
+        <div class="leg-section-title">🌡️</div>
+        <div class="leg-row"><span class="leg-swatch" style="background:#5aa9ff"></span><span data-i18n="legCool">≤ 100 °C</span></div>
+        <div class="leg-row"><span class="leg-swatch" style="background:#3ddc84"></span><span data-i18n="legWarm">100–300 °C</span></div>
+        <div class="leg-row"><span class="leg-swatch" style="background:#ffd166"></span><span data-i18n="legHot">300–500 °C</span></div>
+        <div class="leg-row"><span class="leg-swatch" style="background:#ff9957"></span><span data-i18n="legVeryHot">500–700 °C</span></div>
+        <div class="leg-row"><span class="leg-swatch" style="background:#ff5c5c"></span><span data-i18n="legCritical">≥ 700 °C</span></div>
+        <div class="leg-row"><span class="leg-swatch" style="background:repeating-linear-gradient(45deg,#ff7a1a,#ff7a1a 4px,#5a2a08 4px,#5a2a08 8px)"></span><span data-i18n="legBurnt">δ — слой</span></div>
+      </div>
+    </div>
+    <div class="slider-wrap">
+      <label class="slider-lbl">
+        <span data-i18n="sliderLabel">Время τ</span>
+        <span id="tauReadout" class="mono">τ = 0 мин</span>
+      </label>
+      <input type="range" id="tauSlider" min="0" max="500" value="0" step="1" disabled>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 data-i18n="cardThermal">1. Теплотехнические параметры</h2>
+    <div class="formula">
+λ<sub>тем</sub> = λ₀ + a<sub>λ</sub> · t<sub>b</sub><br>
+c<sub>тем</sub> = c₀ + a<sub>c</sub> · t<sub>b</sub><br>
+a<sub>red</sub> = λ<sub>тем</sub> / [(c<sub>тем</sub> + 50W) · ρ]
+    </div>
+    <table><tbody id="paramRows"></tbody></table>
+  </div>
+
+  <div class="card">
+    <h2 data-i18n="cardZero">2. Статическая проверка при τ = 0</h2>
+    <div class="formula">
+l₀ = k<sub>l</sub> · H₀ &nbsp;·&nbsp; λ = l₀ / min(b,h) &nbsp;·&nbsp; φ = φ(λ) <span style="color:#3ddc84">[авто-интерп.]</span><br>
+N<sub>p,tem</sub><sup>τ=0</sup> = φ · (R<sub>bn</sub>·b·h + R<sub>sn</sub>·ΣAs) · 10⁻³
+    </div>
+    <table><tbody id="zeroRows"></tbody></table>
+  </div>
+
+  <div class="card" id="calcTime">
+    <h2 data-i18n="cardTime">3. Несущая способность по времени (по группам)</h2>
+    <div class="formula">
+δ = 2√(a<sub>red</sub>·τ) − k<sub>b</sub>√a<sub>red</sub><br>
+t<sub>s,i</sub> = 1250 − (1250 − t₀)·Θ<sub>i</sub> &nbsp; (Θ: углы — Θx·Θy, средние — Θy)<br>
+γ<sub>s,i</sub> = γ(t<sub>s,i</sub>) <span style="color:#3ddc84">[интерп.]</span><br>
+N<sub>p,tem</sub> = φ·[R<sub>bn</sub>(b−2δ)(h−2δ) + Σ γ<sub>i</sub>·R<sub>sn</sub>·As<sub>i</sub>]·10⁻³
+    </div>
+    <div class="table-scroll">
+    <table>
+      <thead><tr>
+        <th data-i18n="thTau">τ, мин</th>
+        <th data-i18n="thRoot">2√aτ, мм</th>
+        <th data-i18n="thDelta">δ, мм</th>
+        <th data-i18n="thTs1">t<sub>s1</sub>°C</th>
+        <th data-i18n="thTs2">t<sub>s2</sub>°C</th>
+        <th data-i18n="thTs3">t<sub>s3</sub>°C</th>
+        <th data-i18n="thG1">γ<sub>1</sub></th>
+        <th data-i18n="thG2">γ<sub>2</sub></th>
+        <th data-i18n="thG3">γ<sub>3</sub></th>
+        <th data-i18n="thNu">N<sub>p,tem</sub>, кН</th>
+        <th data-i18n="thCheck">Проверка</th>
+      </tr></thead>
+      <tbody id="timeRows"></tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="card" id="chartBox">
+    <h2 data-i18n="cardChart">Рис. 4. График снижения несущей способности</h2>
+    <p class="mini" data-i18n="chartHint">Оранжевая — несущая способность. Синяя — нагрузка. Жёлтая — Пф.</p>
+    <canvas id="chart" height="120"></canvas>
+  </div>
+
+  <div class="card" id="concl">
+    <h2 data-i18n="cardConcl">Вывод</h2>
+    <div class="result" id="pf">—</div>
+    <p class="note" id="conclusion" data-i18n="conclEmpty">Нажмите «Рассчитать».</p>
+  </div>
+
+  <div class="card">
+    <h2 data-i18n="cardLegend">Пояснение обозначений</h2>
+    <p class="footer-note" id="legendText" data-i18n="legendText"></p>
+  </div>
+</section>
+</main>
+
+<footer class="footer-main">
+  <div class="footer-container">
+    <div>
+      <h3 data-i18n="footContacts">Контакты</h3>
+      <p>📞 +7 929 905 62 05</p>
+      <p>📧 info@OnlineCalculatorJBK.com</p>
+      <p data-i18n="footAddress">📍 Москва, Россия</p>
+    </div>
+    <div>
+      <h3 data-i18n="footSocial">Соцсети</h3>
+      <div class="socials">
+        <a href="https://www.facebook.com/share/1Gwm5T1mLx/?mibextid=wwXIfr" target="_blank" rel="noopener">Facebook</a>
+        <a href="https://www.instagram.com/khbvece?igsh=Y2JlYmM1Mm9ybnBp&utm_source=qr" target="_blank" rel="noopener">Instagram</a>
+        <a href="https://www.youtube.com/@khuselbaatar3164" target="_blank" rel="noopener">YouTube</a>
+        <a href="https://vk.ru/id1030629439" target="_blank" rel="noopener" data-i18n="footVk">ВКонтакте</a>
+      </div>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <p>© <span id="year"></span> OnlineCalculatorJBK | <span data-i18n="footRights">Все права защищены</span></p>
+  </div>
+</footer>
+
+<script src="{{ url_for('static', filename='i18n.js') }}"></script>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
