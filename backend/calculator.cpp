@@ -51,6 +51,18 @@ static double gammaSteel(double t) {
     return interp(t, pts);
 }
 
+// γ_b,tem — бетоны бат бэхийн бууралт халалтаас хамаарч (шугаман интерполяц)
+// Энэ коэффициентийг Rbn дээр үржүүлнэ. Температурыг бетоны ажиллах
+// үлдсэн огтлолын дундаж/үр дүнтэй халалт гэж ойролцоолон авч байна.
+static double gammaConcrete(double t) {
+    static const std::vector<std::pair<double,double>> pts = {
+        {20, 1.00}, {100, 1.00}, {200, 0.95}, {300, 0.85}, {400, 0.75},
+        {500, 0.60}, {600, 0.45}, {700, 0.30}, {800, 0.15},
+        {900, 0.08}, {1000, 0.04}, {1200, 0.00}
+    };
+    return interp(t, pts);
+}
+
 // φ — уян хатан байдлын коэффициент λ-аас хамаарч (шугаман интерполяц, АВТОМАТ)
 static double phiByLambda(double lam) {
     static const std::vector<std::pair<double,double>> pts = {
@@ -127,7 +139,8 @@ static RebarHeat rebarHeat(double a, double b, double h, double t0,
 struct StepResult {
     double tau, root, delta;
     double ts1, ts2, ts3;   // бүлэг бүрийн халалт
-    double g1, g2, g3;      // бүлэг бүрийн γ
+    double g1, g2, g3;      // бүлэг бүрийн γ_s,tem
+    double tbAvg, gb;       // бетоны дундаж халалт ба γ_b,tem
     double Nu;
     bool   ok;
 };
@@ -144,6 +157,8 @@ static StepResult computeStep(double tau,
     r.root  = (tau == 0.0) ? 0.0 : 2.0 * std::sqrt(std::max(aRed, 0.0) * tau * 60.0);
     r.ts1 = r.ts2 = r.ts3 = t0;
     r.g1  = r.g2  = r.g3  = 1.0;
+    r.tbAvg = t0;
+    r.gb = 1.0;
     r.delta = 0.0;
 
     if (tau > 0.0) {
@@ -164,8 +179,19 @@ static StepResult computeStep(double tau,
     const double bb = std::max(1.0, b - 2.0 * r.delta);
     const double hh = std::max(1.0, h - 2.0 * r.delta);
 
-    // Np,tem = φ · [Rbn·(b−2δ)(h−2δ) + Σ γi·Rsn·Asi] · 10⁻³
-    r.Nu = phi * (Rbn*bb*hh
+    // Бетоны γ_b,tem. Энгийн backend тул үлдсэн огтлолын дундаж
+    // халалтыг δ/root харьцаагаар ойролцоолно:
+    //   δ=0 үед бетон бараг хөрсөн, δ өсөхөд дундаж халалт өснө.
+    // Энэ нь Rbn-г цаг хугацаатай хамт бууруулж, бетон хиймлээр
+    // хэт удаан даацтай үлдэх алдааг засна.
+    if (tau > 0.0 && r.root > 0.0) {
+        const double heatRatio = std::max(0.0, std::min(1.0, r.delta / std::max(r.root, 1.0)));
+        r.tbAvg = t0 + (1250.0 - t0) * heatRatio;
+        r.gb = gammaConcrete(r.tbAvg);
+    }
+
+    // Np,tem = φ · [γb·Rbn·(b−2δ)(h−2δ) + Σ γi·Rsn·Asi] · 10⁻³
+    r.Nu = phi * (r.gb*Rbn*bb*hh
                   + (r.g1*Rsn)*As1
                   + (r.g2*Rsn)*As2
                   + (r.g3*Rsn)*As3) * 1.0e-3;
@@ -264,6 +290,8 @@ int main() {
             << "\"g1\":"    << num(r.g1)    << ","
             << "\"g2\":"    << num(r.g2)    << ","
             << "\"g3\":"    << num(r.g3)    << ","
+            << "\"tbAvg\":" << num(r.tbAvg) << ","
+            << "\"gb\":"    << num(r.gb)    << ","
             << "\"delta\":" << num(r.delta) << ","
             << "\"Nu\":"    << num(r.Nu)    << ","
             << "\"ok\":"    << (r.ok ? "true" : "false")
@@ -297,6 +325,8 @@ int main() {
             << "\"ts1\":"   << num(r.ts1)   << ","
             << "\"ts2\":"   << num(r.ts2)   << ","
             << "\"ts3\":"   << num(r.ts3)   << ","
+            << "\"tbAvg\":" << num(r.tbAvg) << ","
+            << "\"gb\":"    << num(r.gb)    << ","
             << "\"delta\":" << num(r.delta) << ","
             << "\"ok\":"    << (r.ok ? "true" : "false")
             << "}";
@@ -326,7 +356,5 @@ int main() {
     std::cout << out.str() << std::endl;
     return 0;
 }
-
-
 
 
