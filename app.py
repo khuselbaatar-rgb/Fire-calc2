@@ -92,7 +92,7 @@ def calculate():
         capture_output=True,
         text=True,
         timeout=10,
-        check=False,
+        check=True,
     )
 
     print("STDOUT:", proc.stdout)
